@@ -25,6 +25,7 @@ class QNetwork(nn.Module):
         super(QNetwork, self).__init__()
 
         input_dim = obs_dim + action_dim + social_embed_dim
+        self.social_embed_dim = social_embed_dim
 
         self.fc1 = nn.Linear(input_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
@@ -36,7 +37,13 @@ class QNetwork(nn.Module):
         if social_embed is not None:
             x = torch.cat([obs, action, social_embed], dim=-1)
         else:
-            x = torch.cat([obs, action], dim=-1)
+            # If no social embedding provided but network expects it, use zeros
+            if self.social_embed_dim > 0:
+                batch_size = obs.shape[0]
+                zero_embed = torch.zeros(batch_size, self.social_embed_dim, device=obs.device)
+                x = torch.cat([obs, action, zero_embed], dim=-1)
+            else:
+                x = torch.cat([obs, action], dim=-1)
 
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
@@ -52,6 +59,7 @@ class GaussianPolicy(nn.Module):
         super(GaussianPolicy, self).__init__()
 
         input_dim = obs_dim + social_embed_dim
+        self.social_embed_dim = social_embed_dim
 
         self.fc1 = nn.Linear(input_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
@@ -65,7 +73,13 @@ class GaussianPolicy(nn.Module):
         if social_embed is not None:
             x = torch.cat([obs, social_embed], dim=-1)
         else:
-            x = obs
+            # If no social embedding provided but network expects it, use zeros
+            if self.social_embed_dim > 0:
+                batch_size = obs.shape[0]
+                zero_embed = torch.zeros(batch_size, self.social_embed_dim, device=obs.device)
+                x = torch.cat([obs, zero_embed], dim=-1)
+            else:
+                x = obs
 
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
