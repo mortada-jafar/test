@@ -254,8 +254,11 @@ class SACAgent:
             target_q = torch.min(target_q1, target_q2) - self.alpha * next_log_prob
             target_q = reward + (1 - done) * self.gamma * target_q
 
-        current_q1 = self.critic_1(obs, action, social_embed)
-        current_q2 = self.critic_2(obs, action, social_embed)
+        # Detach social_embed for critic training (updated separately during policy training)
+        social_embed_detached = social_embed.detach() if social_embed is not None else None
+
+        current_q1 = self.critic_1(obs, action, social_embed_detached)
+        current_q2 = self.critic_2(obs, action, social_embed_detached)
 
         critic_1_loss = F.mse_loss(current_q1, target_q)
         critic_2_loss = F.mse_loss(current_q2, target_q)
