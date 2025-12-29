@@ -234,8 +234,8 @@ class MultiAgentTrainer:
                 if global_step < self.start_steps:
                     action = env.action_space.sample()
                 else:
-                    if self.method == "concat" and social_obs is not None:
-                        action = agent.select_action(obs, social_obs.flatten())
+                    if self.method == "concat":
+                        action = agent.select_action(obs, social_obs.flatten() if social_obs is not None else None)
                     else:
                         action = agent.select_action(obs, social_obs)
 
@@ -256,9 +256,9 @@ class MultiAgentTrainer:
                 if self.method == "independent":
                     buffer.add(obs, action, reward, next_obs, float(done))
                 else:
-                    # Flatten or structure social obs for storage
-                    social_flat = social_obs.flatten() if social_obs is not None else np.zeros(buffer.social_obs.shape[1])
-                    next_social_flat = next_social_obs.flatten() if next_social_obs is not None else np.zeros(buffer.social_obs.shape[1])
+                    # Flatten social obs for storage (always has correct shape now)
+                    social_flat = social_obs.flatten()
+                    next_social_flat = next_social_obs.flatten()
                     buffer.add(obs, action, reward, next_obs, float(done), social_flat, next_social_flat)
 
                 # Track metrics

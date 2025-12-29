@@ -47,6 +47,7 @@ class SocialObservationChannel:
         Get social observation for a specific agent.
 
         Returns noisy state/action pairs from all other agents.
+        For agents without data yet, returns zeros.
 
         Args:
             agent_id: ID of the requesting agent
@@ -54,7 +55,7 @@ class SocialObservationChannel:
 
         Returns:
             social_obs: Array of shape (n_other_agents, state_dim + action_dim)
-                       or None if not enough data available
+                       Always returns fixed size array (zeros for missing data)
         """
         social_obs = []
 
@@ -63,26 +64,26 @@ class SocialObservationChannel:
                 continue
 
             if self.states[i] is None or self.actions[i] is None:
-                continue
+                # Use zeros for agents that haven't provided data yet
+                # Assume full state dimension (6) + action dimension (2)
+                sa_pair = np.zeros(8, dtype=np.float32)
+            else:
+                state = self.states[i].copy()
+                action = self.actions[i].copy()
 
-            state = self.states[i].copy()
-            action = self.actions[i].copy()
+                # Add noise
+                if add_noise:
+                    state_noise = np.random.normal(0, self.state_noise_std, size=state.shape)
+                    action_noise = np.random.normal(0, self.action_noise_std, size=action.shape)
 
-            # Add noise
-            if add_noise:
-                state_noise = np.random.normal(0, self.state_noise_std, size=state.shape)
-                action_noise = np.random.normal(0, self.action_noise_std, size=action.shape)
+                    state = state + state_noise
+                    action = action + action_noise
+                    action = np.clip(action, -1.0, 1.0)  # Keep action in valid range
 
-                state = state + state_noise
-                action = action + action_noise
-                action = np.clip(action, -1.0, 1.0)  # Keep action in valid range
+                # Concatenate state and action
+                sa_pair = np.concatenate([state, action])
 
-            # Concatenate state and action
-            sa_pair = np.concatenate([state, action])
             social_obs.append(sa_pair)
-
-        if len(social_obs) == 0:
-            return None
 
         return np.array(social_obs, dtype=np.float32)
 
