@@ -110,6 +110,11 @@ class SACAgent:
         self.auto_entropy_tuning = auto_entropy_tuning
         self.aux_loss_weight = aux_loss_weight
 
+        # Store social dimensions for later use
+        self.social_state_dim = social_state_dim
+        self.social_action_dim = social_action_dim
+        self.n_other_agents = n_other_agents
+
         # Compute dimensions based on method
         policy_input_dim = obs_dim
         social_embedding_dim = 0
@@ -177,12 +182,19 @@ class SACAgent:
 
         # Process social observation based on method
         social_embed = None
-        if self.method == "concat" and social_obs is not None:
-            social_flat = social_obs.flatten()
+        if self.method == "concat":
+            if social_obs is not None:
+                social_flat = social_obs.flatten()
+            else:
+                # Provide zero-padding if no social observations available
+                social_size = self.policy.fc1.in_features - self.obs_dim
+                social_flat = np.zeros(social_size, dtype=np.float32)
             obs = torch.cat([obs, torch.FloatTensor(social_flat).unsqueeze(0).to(self.device)], dim=-1)
-        elif self.method == "proposed" and social_obs is not None:
-            social_tensor = torch.FloatTensor(social_obs).unsqueeze(0).to(self.device)
-            social_embed = self.social_encoder(social_tensor)
+        elif self.method == "proposed":
+            if social_obs is not None:
+                social_tensor = torch.FloatTensor(social_obs).unsqueeze(0).to(self.device)
+                social_embed = self.social_encoder(social_tensor)
+            # If social_obs is None, social_embed stays None (zero embedding will be used)
 
         with torch.no_grad():
             if deterministic:
@@ -209,25 +221,26 @@ class SACAgent:
             social_obs = batch['social_obs']
             next_social_obs = batch['next_social_obs']
 
-            # Reshape social observations
+            # Reshape social observations from flat to (batch, n_agents, state_dim + action_dim)
             batch_size = obs.shape[0]
-            n_features = social_obs.shape[-1]
+            features_per_agent = self.social_state_dim + self.social_action_dim
 
-            # Assume social_obs is flattened, reshape to (batch, n_agents, features_per_agent)
-            # This needs to match the structure from the environment
-            # For now, we'll handle it in the update method
+            # Reshape: (batch, n_agents * features) -> (batch, n_agents, features)
+            social_obs = social_obs.reshape(batch_size, self.n_other_agents, features_per_agent)
+            next_social_obs = next_social_obs.reshape(batch_size, self.n_other_agents, features_per_agent)
 
             # Get embeddings
             social_embed = self.social_encoder(social_obs)
             next_social_embed = self.social_encoder(next_social_obs)
 
             # Compute auxiliary loss (action prediction)
-            # We predict the mean action of other agents
-            # This is a simplified version - in practice, you'd extract ground truth actions
+            # Predict actions and compare with ground truth from social observations
             predicted_actions = self.action_predictor(social_embed)
-            # Extract ground truth actions from social_obs (last action_dim elements per agent)
-            # This is a placeholder - actual implementation depends on social_obs structure
-            # aux_loss = F.mse_loss(predicted_actions, target_actions)
+            # Extract actual actions from social_obs (last action_dim dimensions)
+            actual_actions = social_obs[:, :, self.social_state_dim:]  # (batch, n_agents, action_dim)
+            # Average across agents for single prediction
+            actual_actions_mean = actual_actions.mean(dim=1)  # (batch, action_dim)
+            aux_loss = F.mse_loss(predicted_actions, actual_actions_mean)
 
         elif self.method == "concat" and 'social_obs' in batch:
             obs = torch.cat([obs, batch['social_obs']], dim=-1)
